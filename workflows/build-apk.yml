@@ -1,0 +1,55 @@
+name: Build Debug APK
+
+# Runs automatically on every push to main, and can also be triggered
+# manually from the Actions tab ("Run workflow").
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ubuntu-latest runners already ship a full, current Android SDK
+      # (android-actions/setup-android's own log confirmed this: "Found
+      # preinstalled sdkmanager..."). That action then tried to replace it
+      # and install a legacy "tools" package Google removed from their
+      # repository years ago, which is what actually failed. So we skip
+      # that action entirely and just use the SDK that's already there.
+      - name: Put Android cmdline-tools on PATH
+        run: echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+      - name: Accept licenses & install required SDK packages
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      # This project's gradle-wrapper.jar binary isn't checked in (it couldn't
+      # be fetched in the offline environment that generated this project), so
+      # we invoke Gradle directly (installed by setup-gradle above) instead of
+      # via ./gradlew. If you later add a real wrapper jar, you can switch
+      # this to "./gradlew assembleDebug".
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoMosaicScanner-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
